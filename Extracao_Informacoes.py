@@ -10,7 +10,7 @@ import multiprocessing
 sys.stdout.reconfigure(encoding='utf-8')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-ARQUIVO_EXCEL_LINKS = "Links_Carros.xlsx"
+ARQUIVO_EXCEL_LINKS = "links_chaves_na_mao_motos.xlsx"
 ARQUIVO_PKL_DADOS = "dados_chaves_na_mao.pkl"
 ARQUIVO_EXCEL_DADOS = "dados_chaves_na_mao.xlsx"
 ARQUIVO_CHECKPOINT = "checkpoint.pkl"
@@ -103,7 +103,7 @@ async def processar_links(links, max_concurrent=20):
                     resultado = await tarefa
                     if resultado:
                         dados_coletados.append(resultado)
-                        if len(dados_coletados) % 5000 == 0:
+                        if len(dados_coletados) % 150 == 0:
                             pd.DataFrame(dados_coletados).to_pickle(ARQUIVO_CHECKPOINT)
                             logging.info(f"Checkpoint salvo com {len(dados_coletados)} links.")
             finally:
