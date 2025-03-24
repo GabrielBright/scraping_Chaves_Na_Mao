@@ -5,16 +5,17 @@ import asyncio
 import sys
 import logging
 from tqdm import tqdm
-import multiprocessing
 
 sys.stdout.reconfigure(encoding='utf-8')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-ARQUIVO_EXCEL_LINKS = "links_chaves_na_mao_motos.xlsx"
+#Salvando Dados coletados em Excel
+ARQUIVO_EXCEL_LINKS = "links_chaves_na_mao_carros.xlsx"
 ARQUIVO_PKL_DADOS = "dados_chaves_na_mao.pkl"
 ARQUIVO_EXCEL_DADOS = "dados_chaves_na_mao.xlsx"
 ARQUIVO_CHECKPOINT = "checkpoint.pkl"
 
+#Carregando os links coletados do arquivo links_chaves_na_mao_carros.xlsx para coletar os dados 
 async def carregar_links():
     if not os.path.exists(ARQUIVO_EXCEL_LINKS):
         logging.error(f"Arquivo {ARQUIVO_EXCEL_LINKS} não encontrado.")
@@ -37,6 +38,7 @@ async def extrair_elemento(pagina, xpath, index=0, default="N/A"):
     except Exception:
         return default
 
+#Extrai os dados 
 async def extracaoDados(contexto, link, semaphore, retries=2):
     async with semaphore:
         pagina = await contexto.new_page()
@@ -47,7 +49,9 @@ async def extracaoDados(contexto, link, semaphore, retries=2):
                 if response.status != 200:
                     logging.warning(f"Status {response.status} em {link}. Possível bloqueio.")
                     return None
+                #Tempo para não ocorrer algum erro
                 await pagina.wait_for_load_state('domcontentloaded', timeout=60000)
+                #xpath dos dados em sua pagina da web
                 resultados = await asyncio.gather(
                     extrair_elemento(pagina, '//article//section[2]//div//div[1]//div//span//p//b', 0),  # Modelo
                     extrair_elemento(pagina, '//article//section[2]//div//div[1]//div//span//p//b', 1),  # Preço
@@ -61,6 +65,7 @@ async def extracaoDados(contexto, link, semaphore, retries=2):
                     extrair_elemento(pagina, '//article//section[2]//div//div[1]//ul//li[1]//p//b'),  # Localização
                     extrair_elemento(pagina, '//*[@id="aside-init"]/div[2]/span'),  # Anunciante
                 )
+                #Separando em colunas
                 dados = {
                     "Modelo": resultados[0], "Preço": resultados[1], "Versão": resultados[2],
                     "Cor": resultados[3], "KM": resultados[4], "Transmissão": resultados[5],
@@ -81,10 +86,11 @@ async def extracaoDados(contexto, link, semaphore, retries=2):
             finally:
                 await pagina.close()
 
-async def processar_links(links, max_concurrent=20):
+#Processamentos dos links de 15 em 15 links
+async def processar_links(links, max_concurrent=15):
     dados_coletados = []
     semaphore = asyncio.Semaphore(max_concurrent)
-
+    #Salva em checkpoints
     if os.path.exists(ARQUIVO_CHECKPOINT):
         with open(ARQUIVO_CHECKPOINT, 'rb') as f:
             dados_coletados = pd.read_pickle(f).to_dict('records')
@@ -92,6 +98,7 @@ async def processar_links(links, max_concurrent=20):
             links = [link for link in links if link not in processed_links]
             logging.info(f"Checkpoint carregado: {len(dados_coletados)} links já processados, {len(links)} restantes.")
 
+    #Abre o navegador do playright, está salvando a cada 500 coletados
     async with async_playwright() as p:
         navegador = await p.chromium.launch(headless=True)
         for i in range(0, len(links), max_concurrent):
@@ -103,7 +110,7 @@ async def processar_links(links, max_concurrent=20):
                     resultado = await tarefa
                     if resultado:
                         dados_coletados.append(resultado)
-                        if len(dados_coletados) % 150 == 0:
+                        if len(dados_coletados) % 500 == 0:
                             pd.DataFrame(dados_coletados).to_pickle(ARQUIVO_CHECKPOINT)
                             logging.info(f"Checkpoint salvo com {len(dados_coletados)} links.")
             finally:
@@ -112,6 +119,7 @@ async def processar_links(links, max_concurrent=20):
 
     return dados_coletados
 
+#Salvando os dados salvos do checkpoint em um arquivo pkl
 async def salvar_dados(dados_coletados):
     if not dados_coletados:
         logging.warning("Nenhum dado para salvar.")

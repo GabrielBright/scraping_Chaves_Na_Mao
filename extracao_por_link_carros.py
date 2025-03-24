@@ -133,6 +133,7 @@ links = [
     ("BRM", "https://www.chavesnamao.com.br/carros/brasil/brm/2002/", 1),
 ]
 
+#Onde sera salvo os links coletados
 ARQUIVO_PICKLE = "links_chaves_na_mao_carros.pkl"
 ARQUIVO_EXCEL = "links_chaves_na_mao_carros.xlsx"  
 DOMINIO_BASE = "https://www.chavesnamao.com.br/"
@@ -157,6 +158,7 @@ def carregar_progresso():
             return pickle.load(f)
     return set()
 
+#Função para rolar a página e coletar os links 
 async def rolar_e_coletar(pagina, limite_itens):
     ids_itens_carregados = set()
     tentativas_sem_novos_itens = 0
@@ -199,6 +201,7 @@ async def rolar_e_coletar(pagina, limite_itens):
     print(f"Fim da rolagem para esta página. Total de itens carregados: {len(ids_itens_carregados)}")
     return [{"Link": link} for link in ids_itens_carregados]
 
+#Verifica se não é algum anuncio e sim um link 
 async def processar_url(navegador, cidade, url, limite, links_existentes):
     if url in links_existentes:
         print(f"{cidade} já processado. Pulando...")
@@ -208,7 +211,7 @@ async def processar_url(navegador, cidade, url, limite, links_existentes):
     pagina = await navegador.new_page()
     try:
         await pagina.route("**/*.{png,jpg,jpeg,gif,webp}", lambda route: route.abort())
-        await pagina.goto(url, timeout=40000)
+        await pagina.goto(url, timeout=60000)
         await pagina.wait_for_load_state("domcontentloaded")
         dados = await rolar_e_coletar(pagina, limite)
         return dados
