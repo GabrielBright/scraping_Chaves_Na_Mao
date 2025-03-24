@@ -138,6 +138,7 @@ ARQUIVO_PICKLE = "links_chaves_na_mao_carros.pkl"
 ARQUIVO_EXCEL = "links_chaves_na_mao_carros.xlsx"  
 DOMINIO_BASE = "https://www.chavesnamao.com.br/"
 
+#Salvando progresso em arquivos pkl
 def salvar_progresso(dados):
     if os.path.exists(ARQUIVO_PICKLE):
         with open(ARQUIVO_PICKLE, "rb") as f:
@@ -225,7 +226,8 @@ def salvar_em_excel(dados_totais):
     if not dados_totais:
         print("Nenhum dado para salvar em Excel.")
         return
-
+    
+    #Convertendo pkl para xlsx ao terminar o código
     df = pd.DataFrame(dados_totais)
     df = df.drop_duplicates(subset=["Link"])
     df.to_excel(ARQUIVO_EXCEL, index=False)
@@ -252,4 +254,3 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
     print("Extração finalizada!")
-
