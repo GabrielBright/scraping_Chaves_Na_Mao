@@ -45,12 +45,12 @@ async def extracaoDados(contexto, link, semaphore, retries=2):
         logging.info(f"Acessando {link}")
         for attempt in range(retries):
             try:
-                response = await pagina.goto(link, timeout=60000)
+                response = await pagina.goto(link, timeout=45000)
                 if response.status != 200:
                     logging.warning(f"Status {response.status} em {link}. Possível bloqueio.")
                     return None
                 #Tempo para não ocorrer algum erro
-                await pagina.wait_for_load_state('domcontentloaded', timeout=60000)
+                await pagina.wait_for_load_state('domcontentloaded', timeout=45000)
                 #xpath dos dados em sua pagina da web
                 resultados = await asyncio.gather(
                     extrair_elemento(pagina, '//article//section[2]//div//div[1]//div//span//p//b', 0),  # Modelo
@@ -87,7 +87,7 @@ async def extracaoDados(contexto, link, semaphore, retries=2):
                 await pagina.close()
 
 #Processamentos dos links de 15 em 15 links
-async def processar_links(links, max_concurrent=15):
+async def processar_links(links, max_concurrent=25):
     dados_coletados = []
     semaphore = asyncio.Semaphore(max_concurrent)
     #Salva em checkpoints

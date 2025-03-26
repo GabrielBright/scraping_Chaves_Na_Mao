@@ -5,115 +5,111 @@ import asyncio
 import sys
 import logging
 from tqdm import tqdm
-from urllib.parse import urlparse
 
 sys.stdout.reconfigure(encoding='utf-8')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Salvando Dados coletados em Excel
 ARQUIVO_EXCEL_LINKS = "links_chaves_na_mao_carros.xlsx"
 ARQUIVO_PKL_DADOS = "dados_chaves_na_mao.pkl"
 ARQUIVO_EXCEL_DADOS = "dados_chaves_na_mao.xlsx"
 ARQUIVO_CHECKPOINT = "checkpoint.pkl"
 
-def is_valid_url(url):
-    try:
-        result = urlparse(url)
-        return all([result.scheme, result.netloc])
-    except ValueError:
-        return False
-
 async def carregar_links():
     if not os.path.exists(ARQUIVO_EXCEL_LINKS):
         logging.error(f"Arquivo {ARQUIVO_EXCEL_LINKS} não encontrado.")
         return []
-    df = await asyncio.to_thread(pd.read_excel, ARQUIVO_EXCEL_LINKS, usecols=["Link"], engine="openpyxl")
-    links = [link for link in df['Link'].dropna().unique().tolist() if is_valid_url(link)]
-    logging.info(f"Carregados {len(links)} links únicos válidos.")
-    return links
-
-async def extrair_elemento(pagina, xpath, index=0, default="N/A"):
     try:
-        elementos = pagina.locator(xpath)
-        if await elementos.count() > index:
-            return (await elementos.nth(index).inner_text()).strip()
-        return default
-    except Exception:
-        return default
+        df = await asyncio.to_thread(pd.read_excel, ARQUIVO_EXCEL_LINKS, usecols=["Link"])
+        links = df['Link'].dropna().unique().tolist()
+        logging.info(f"Carregados {len(links)} links únicos do arquivo Excel.")
+        return links
+    except Exception as e:
+        logging.error(f"Erro ao carregar {ARQUIVO_EXCEL_LINKS}: {e}")
+        return []
 
-async def extracaoDados(contexto, link, semaphore, retries=3):
+async def extrair_dados_pagina(pagina):
+    try:
+        return await pagina.evaluate('''() => {
+            const getText = (xpath) => {
+                const el = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                return el ? el.innerText.trim() : "N/A";
+            };
+            return {
+                modelo: getText('//article//section[2]//div//div[1]//div//span//p//b'),
+                preco: getText('//article//section[2]//div//div[1]//div//span//p//b[2]'),
+                versao: getText('//article//section[2]//div//div[1]//div//span//p//small'),
+                cor: getText('//article/article/section[2]/div/div[1]/ul/li[7]/p/b'),
+                km: getText('//article//section[2]//div//div[1]//ul//li[3]//p//b'),
+                transmissao: getText('//article//section[2]//div//div[1]//ul//li[4]//p//b'),
+                fipe: getText('//*[@id="version-price-fipe"]/tr[1]'),
+                ano_modelo: getText('//article//section[2]//div//div[1]//ul//li[2]//p//b'),
+                combustivel: getText('//article//section[2]//div//div[1]//ul//li[5]//p//b'),
+                localizacao: getText('//article//section[2]//div//div[1]//ul//li[1]//p//b'),
+                anunciante: getText('//*[@id="aside-init"]/div[2]/span')
+            };
+        }''')
+    except Exception as e:
+        logging.error(f"Erro ao extrair dados da página: {e}")
+        return None
+
+async def extracaoDados(contexto, link, semaphore, retries=2):
     async with semaphore:
         pagina = await contexto.new_page()
+        logging.info(f"Acessando {link}")
         for attempt in range(retries):
             try:
-                response = await pagina.goto(link, timeout=42000)  # Reduzido para 10s
+                response = await pagina.goto(link, wait_until='networkidle', timeout=60000)
                 if response.status != 200:
-                    logging.warning(f"Status {response.status} em {link}.")
+                    logging.warning(f"Status {response.status} em {link}. Possível bloqueio.")
                     return None
-                await pagina.wait_for_selector('//article//section[2]', timeout=42000)
-                resultados = await asyncio.gather(
-                    extrair_elemento(pagina, '//article//section[2]//div//div[1]//div//span//p//b', 0),
-                    extrair_elemento(pagina, '//article//section[2]//div//div[1]//div//span//p//b', 1),
-                    extrair_elemento(pagina, '//article//section[2]//div//div[1]//div//span//p//small'),
-                    extrair_elemento(pagina, '//article/article/section[2]/div/div[1]/ul/li[7]/p/b'),
-                    extrair_elemento(pagina, '//article//section[2]//div//div[1]//ul//li[3]//p//b'),
-                    extrair_elemento(pagina, '//article//section[2]//div//div[1]//ul//li[4]//p//b'),
-                    extrair_elemento(pagina, '//*[@id="version-price-fipe"]/tr[1]'),
-                    extrair_elemento(pagina, '//article//section[2]//div//div[1]//ul//li[2]//p//b'),
-                    extrair_elemento(pagina, '//article//section[2]//div//div[1]//ul//li[5]//p//b'),
-                    extrair_elemento(pagina, '//article//section[2]//div//div[1]//ul//li[1]//p//b'),
-                    extrair_elemento(pagina, '//*[@id="aside-init"]/div[2]/span'),
-                )
-                dados = {
-                    "Modelo": resultados[0], "Preço": resultados[1], "Versão": resultados[2],
-                    "Cor": resultados[3], "KM": resultados[4], "Transmissão": resultados[5],
-                    "Fipe": resultados[6], "Ano do Modelo": resultados[7], "Combustível": resultados[8],
-                    "Localização": resultados[9], "Anunciante": resultados[10], "Cidade": "Desconhecido",
-                    "Link": link
-                }
-                if " - " in dados["Localização"]:
-                    dados["Cidade"] = dados["Localização"].split(" - ")[0]
-                return dados
+                
+                resultados = await extrair_dados_pagina(pagina)
+                if resultados:
+                    localizacao = resultados["localizacao"]
+                    cidade = localizacao.split(" - ")[0] if " - " in localizacao else "Desconhecido"
+                    resultados.update({"Cidade": cidade, "Link": link})
+                    return resultados
             except Exception as e:
                 if attempt < retries - 1:
-                    delay = 2 ** attempt
-                    logging.warning(f"Tentativa {attempt + 1} falhou para {link}. Tentando novamente após {delay}s...")
-                    await asyncio.sleep(delay)
+                    logging.warning(f"Tentativa {attempt + 1} falhou para {link}. Tentando novamente após 2s...")
+                    await asyncio.sleep(2)
                 else:
                     logging.error(f"Erro em {link} após {retries} tentativas: {e}")
                     return None
             finally:
                 await pagina.close()
 
-async def processar_links(links, max_concurrent=22): 
+async def processar_links(links, max_concurrent=20):
     dados_coletados = []
-    falhas = 0
     semaphore = asyncio.Semaphore(max_concurrent)
+    
     if os.path.exists(ARQUIVO_CHECKPOINT):
         with open(ARQUIVO_CHECKPOINT, 'rb') as f:
             dados_coletados = pd.read_pickle(f).to_dict('records')
             processed_links = {d["Link"] for d in dados_coletados}
             links = [link for link in links if link not in processed_links]
             logging.info(f"Checkpoint carregado: {len(dados_coletados)} links já processados, {len(links)} restantes.")
-    
+
     async with async_playwright() as p:
         navegador = await p.chromium.launch(headless=True)
         contexto = await navegador.new_context()
-        with tqdm(total=len(links), desc="Processando links") as pbar:
-            tarefas = [extracaoDados(contexto, link, semaphore) for link in links]
-            for tarefa in asyncio.as_completed(tarefas):
-                resultado = await tarefa
-                if resultado:
-                    dados_coletados.append(resultado)
-                else:
-                    falhas += 1
-                pbar.update(1)
-                if len(dados_coletados) % 200 == 0:
-                    pd.DataFrame(dados_coletados).to_pickle(ARQUIVO_CHECKPOINT)
-                    logging.info(f"Checkpoint salvo com {len(dados_coletados)} links. Falhas até agora: {falhas}")
-                    await asyncio.sleep(0.2)  # Pausa de 0,2s a cada 50 links
-        await contexto.close()
+        
+        for i in range(0, len(links), max_concurrent):
+            batch = links[i:i + max_concurrent]
+            try:
+                tarefas = [extracaoDados(contexto, link, semaphore) for link in batch]
+                for tarefa in tqdm(asyncio.as_completed(tarefas), total=len(batch), desc="Processando lote"):
+                    resultado = await tarefa
+                    if resultado:
+                        dados_coletados.append(resultado)
+                        if len(dados_coletados) % 500 == 0:
+                            pd.DataFrame(dados_coletados).to_pickle(ARQUIVO_CHECKPOINT)
+                            logging.info(f"Checkpoint salvo com {len(dados_coletados)} links.")
+            finally:
+                pass
         await navegador.close()
-    logging.info(f"Processamento concluído. Total de falhas: {falhas}")
+    
     return dados_coletados
 
 async def salvar_dados(dados_coletados):
@@ -122,15 +118,16 @@ async def salvar_dados(dados_coletados):
         return
     df = pd.DataFrame(dados_coletados)
     await asyncio.to_thread(df.to_pickle, ARQUIVO_PKL_DADOS)
+    logging.info(f"Dados salvos em '{ARQUIVO_PKL_DADOS}' ({len(df)} registros).")
     await asyncio.to_thread(df.to_excel, ARQUIVO_EXCEL_DADOS, index=False)
-    logging.info(f"Finalizado: {len(df)} registros salvos. Sucessos: {len(df)}, Falhas: {45877 - len(df)}.")
+    logging.info(f"Dados salvos em '{ARQUIVO_EXCEL_DADOS}' ({len(df)} registros).")
 
 async def main():
     links = await carregar_links()
     if not links:
         logging.error("Nenhum link para processar.")
         return
-    dados_coletados = await processar_links(links, max_concurrent=22)
+    dados_coletados = await processar_links(links)
     await salvar_dados(dados_coletados)
 
 if __name__ == "__main__":
