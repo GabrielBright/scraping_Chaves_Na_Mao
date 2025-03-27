@@ -11,6 +11,8 @@ DOMINIO_BASE = "https://www.chavesnamao.com.br/"
 links = [
     ("Motos", "https://www.chavesnamao.com.br/motos-usadas/brasil/?filtro=amin:2002,amax:", 1700),
     ("Motos", "https://www.chavesnamao.com.br/motos-usadas/brasil/?&filtro=amin:2002,amax:0,or:4", 1700),
+    ("Curitiba", "https://www.chavesnamao.com.br/motos-usadas/pr-curitiba/?filtro=amin:2002,amax:0", 350),
+    ("RJ", "https://www.chavesnamao.com.br/motos-usadas/rj-rio-de-janeiro/?filtro=amin:2002,amax:0", 221),
     ("Honda", "https://www.chavesnamao.com.br/motos/brasil/honda/2002/", 1085),
     ("Yamaha", "https://www.chavesnamao.com.br/motos/brasil/yamaha/2002/", 476),
     ("BMW", "https://www.chavesnamao.com.br/motos/brasil/bmw/2002/", 210),

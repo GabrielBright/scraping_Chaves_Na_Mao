@@ -56,7 +56,7 @@ async def extracaoDados(contexto, link, semaphore, retries=2):
                     extrair_elemento(pagina, '//article//section[2]//div//div[1]//div//span//p//b', 0),  # Modelo
                     extrair_elemento(pagina, '//article//section[2]//div//div[1]//div//span//p//b', 1),  # Preço
                     extrair_elemento(pagina, '//article//section[2]//div//div[1]//div//span//p//small'),  # Versão
-                    extrair_elemento(pagina, '//article/article/section[2]/div/div[1]/ul/li[7]/p/b'),  # Cor
+                    extrair_elemento(pagina, '//article/article/section[2]/div/div[1]/ul/li[7]/p/b'), # Cor
                     extrair_elemento(pagina, '//article//section[2]//div//div[1]//ul//li[3]//p//b'),  # KM
                     extrair_elemento(pagina, '//article//section[2]//div//div[1]//ul//li[4]//p//b'),  # Transmissão
                     extrair_elemento(pagina, '//*[@id="version-price-fipe"]/tr[1]'),  # Fipe
