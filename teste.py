@@ -50,29 +50,28 @@ async def extrair_com_multiplos_seletores(pagina, seletores, default="N/A", link
     logging.debug(f"Nenhum seletor de Cor funcionou para {link}, retornando {default}")
     return default
 
-async def extracaoDados(contexto, link, semaphore, retries=2):
+async def extracaoDados(contexto, link, semaphore, retries=3):
     async with semaphore:
         pagina = await contexto.new_page()
         logging.info(f"Acessando {link}")
         for attempt in range(retries):
             try:
-                response = await pagina.goto(link, timeout=30000)
-                if response.status != 200:
+                response = await pagina.goto(link, timeout=15000)
+                if response and response.status != 200:
                     logging.warning(f"Status {response.status} em {link}. Possível bloqueio.")
                     return None
-                await pagina.wait_for_load_state('domcontentloaded', timeout=30000)
+                await pagina.wait_for_load_state('domcontentloaded', timeout=15000)
 
-                # Seletores para "Cor" (tentar 7 primeiro, depois 6)
+                # Seletores para "Cor" com o novo seletor completo adicionado
                 cor_seletores = [
-                    '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(7) p b',
-                    '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(6) p b'
+                    '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(7) p b',  # Tentativa padrão
+                    '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(6) p b',  # Alternativa existente
+                    'body > main > article > article > section.row.spacing-4x.space-between.style-module__icNBzq__mainSection > div > div.column.spacing-2x > ul > li:nth-child(6) > p > b'  # Novo seletor completo
                 ]
-                # Seletores para "Preço Fipe" (com ou sem <b>)
                 preco_fipe_seletores = [
                     '#version-price-fipe tr:nth-child(1) td:nth-child(3) p b',
                     '#version-price-fipe tr:nth-child(1) td:nth-child(3) p'
                 ]
-                # Extração dos dados
                 resultados = await asyncio.gather(
                     extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x div span p b'),  # Modelo
                     extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x div span p small'),  # Versão
@@ -94,8 +93,8 @@ async def extracaoDados(contexto, link, semaphore, retries=2):
                     "Cor": resultados[3],
                     "KM": resultados[6],
                     "Transmissão": resultados[7],
-                    "Fipe": resultados[10],  # Preço Fipe
-                    "Código Fipe": resultados[9],  # Código Fipe separado
+                    "Fipe": resultados[10],
+                    "Código Fipe": resultados[9],
                     "Ano do Modelo": resultados[5],
                     "Combustível": resultados[8],
                     "Localização": resultados[4],
@@ -108,15 +107,15 @@ async def extracaoDados(contexto, link, semaphore, retries=2):
                 return dados
             except Exception as e:
                 if attempt < retries - 1:
-                    logging.warning(f"Tentativa {attempt + 1} falhou para {link}. Tentando novamente após 2s...")
-                    await asyncio.sleep(2)
+                    logging.warning(f"Tentativa {attempt + 1} falhou para {link}: {str(e)}. Tentando novamente após 1s...")
+                    await asyncio.sleep(1)
                 else:
-                    logging.error(f"Erro em {link} após {retries} tentativas: {e}")
+                    logging.error(f"Erro em {link} após {retries} tentativas: {str(e)}")
                     return None
             finally:
                 await pagina.close()
 
-async def processar_links(links, max_concurrent=25):
+async def processar_links(links, max_concurrent=15):
     dados_coletados = []
     semaphore = asyncio.Semaphore(max_concurrent)
     if os.path.exists(ARQUIVO_CHECKPOINT):
@@ -137,9 +136,12 @@ async def processar_links(links, max_concurrent=25):
                     resultado = await tarefa
                     if resultado:
                         dados_coletados.append(resultado)
-                        if len(dados_coletados) % 500 == 0:
+                        if len(dados_coletados) % 100 == 0:
                             pd.DataFrame(dados_coletados).to_pickle(ARQUIVO_CHECKPOINT)
                             logging.info(f"Checkpoint salvo com {len(dados_coletados)} links.")
+                await asyncio.sleep(1)
+            except Exception as e:
+                logging.error(f"Erro no processamento do lote {i//max_concurrent + 1}: {str(e)}")
             finally:
                 await contexto.close()
         await navegador.close()
