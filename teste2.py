@@ -5,10 +5,9 @@ import asyncio
 import sys
 import logging
 from tqdm import tqdm
-import random
 
 sys.stdout.reconfigure(encoding='utf-8')
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Arquivos
 ARQUIVO_EXCEL_LINKS = "links_chaves_na_mao_motos.xlsx"
@@ -29,113 +28,124 @@ async def carregar_links():
         logging.error(f"Erro ao carregar {ARQUIVO_EXCEL_LINKS}: {e}")
         return []
 
-async def extrair_elemento(pagina, xpath, index=0, default="N/A"):
+async def extrair_elemento(pagina, seletor, default="N/A"):
     try:
-        elementos = pagina.locator(xpath)
-        if await elementos.count() > index:
-            return (await elementos.nth(index).inner_text()).strip()
+        elemento = pagina.locator(seletor)
+        if await elemento.count() > 0:
+            texto = (await elemento.first.inner_text()).strip()
+            if texto:
+                return texto
         return default
     except Exception:
         return default
 
-async def extracaoDados(pagina, link, retries=3):
-    logging.info(f"Acessando {link}")
-    for attempt in range(retries):
-        try:
-            response = await pagina.goto(link, timeout=30000)  # Timeout reduzido para teste
-            if response.status != 200:
-                logging.warning(f"Status {response.status} em {link}. Possível bloqueio.")
-                return None
-            await pagina.wait_for_load_state('domcontentloaded', timeout=30000)
-            resultados = await asyncio.gather(
-                extrair_elemento(pagina, '//article//section[2]//div//div[1]//div//span//p//b', 0),
-                extrair_elemento(pagina, '//article//section[2]//div//div[1]//div//span//p//b', 1),
-                extrair_elemento(pagina, '//article//section[2]//div//div[1]//div//span//p//small'),
-                extrair_elemento(pagina, '//article/article/section[2]/div/div[1]/ul/li[7]/p/b'),
-                extrair_elemento(pagina, '//article//section[2]//div//div[1]//ul//li[3]//p//b'),
-                extrair_elemento(pagina, '//article//section[2]//div//div[1]//ul//li[4]//p//b'),
-                extrair_elemento(pagina, '//*[@id="version-price-fipe"]/tr[1]'),
-                extrair_elemento(pagina, '//article//section[2]//div//div[1]//ul//li[2]//p//b'),
-                extrair_elemento(pagina, '//article//section[2]//div//div[1]//ul//li[5]//p//b'),
-                extrair_elemento(pagina, '//article//section[2]//div//div[1]//ul//li[1]//p//b'),
-                extrair_elemento(pagina, '//*[@id="aside-init"]/div[2]/span'),
-            )
-            dados = {
-                "Modelo": resultados[0], "Preço": resultados[1], "Versão": resultados[2],
-                "Cor": resultados[3], "KM": resultados[4], "Transmissão": resultados[5],
-                "Fipe": resultados[6], "Ano do Modelo": resultados[7], "Combustível": resultados[8],
-                "Localização": resultados[9], "Anunciante": resultados[10], "Cidade": "Desconhecido",
-                "Link": link
-            }
-            if " - " in dados["Localização"]:
-                dados["Cidade"] = dados["Localização"].split(" - ")[0]
-            return dados
-        except Exception as e:
-            if attempt < retries - 1:
-                logging.warning(f"Tentativa {attempt + 1} falhou para {link}. Tentando novamente após 2s...")
-                await asyncio.sleep(2)
-            else:
-                logging.error(f"Erro em {link} após {retries} tentativas: {e}")
-                return None
-        finally:
-            await pagina.close()  # Fecha a página após cada tentativa
+async def extrair_com_multiplos_seletores(pagina, seletores, default="N/A", link=""):
+    for seletor in seletores:
+        valor = await extrair_elemento(pagina, seletor)
+        if valor != "N/A":
+            logging.debug(f"Valor extraído com sucesso de '{seletor}' para {link}: {valor}")
+            return valor
+        else:
+            logging.debug(f"Valor não encontrado em '{seletor}' para {link}")
+    logging.debug(f"Nenhum seletor funcionou para {link}, retornando {default}")
+    return default
 
-async def processar_links(links, max_concurrent=10):
+async def extracaoDados(contexto, link, semaphore, retries=3):
+    async with semaphore:
+        pagina = await contexto.new_page()
+        logging.info(f"Acessando {link}")
+        for attempt in range(retries):
+            try:
+                response = await pagina.goto(link, timeout=25000)
+                if response and response.status != 200:
+                    logging.warning(f"Status {response.status} em {link}. Possível bloqueio.")
+                    return None
+                await pagina.wait_for_load_state('domcontentloaded', timeout=25000)
+
+                cor_seletores = [
+                    '//article/article/section[2]/div/div[1]/ul/li[7]/p/b',
+                    '//article/article/section[2]/div/div[1]/ul/li[6]/p/b', 
+                    '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(7) p b'
+                ]
+                preco_fipe_seletores = [
+                    '#version-price-fipe tr:nth-child(1) td:nth-child(3) p b',
+                    '#version-price-fipe tr:nth-child(1) td:nth-child(3) p',
+                    '#version-price-fipe tr:nth-child(1) td:nth-child(3)',  
+                    '#version-price-fipe td:last-child p'
+                ]
+                resultados = await asyncio.gather(
+                    extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x div span p b'),  # Modelo
+                    extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x div span p small'),  # Versão
+                    extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x div div span p b'),  # Preço
+                    extrair_com_multiplos_seletores(pagina, cor_seletores, link=link),  # Cor com XPath
+                    extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(1) p b'),  # Localização
+                    extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(2) p b'),  # Ano do Modelo
+                    extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(3) p b'),  # KM
+                    extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(4) p b'),  # Transmissão
+                    extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(5) p b'),  # Combustível
+                    extrair_elemento(pagina, '#version-price-fipe tr:nth-child(1) td:nth-child(2) p'),  # Código Fipe
+                    extrair_com_multiplos_seletores(pagina, preco_fipe_seletores, link=link),  # Preço Fipe
+                    extrair_elemento(pagina, '#aside-init .style-module__Z2BY8a__container .style-module__Z2BY8a__nameContainer a span h2 b'),  # Anunciante
+                )
+                dados = {
+                    "Modelo": resultados[0],
+                    "Versão": resultados[1],
+                    "Preço": resultados[2],
+                    "Cor": resultados[3],
+                    "KM": resultados[6],
+                    "Transmissão": resultados[7],
+                    "Fipe": resultados[10],
+                    "Código Fipe": resultados[9],
+                    "Ano do Modelo": resultados[5],
+                    "Combustível": resultados[8],
+                    "Localização": resultados[4],
+                    "Anunciante": resultados[11],
+                    "Cidade": "Desconhecido",
+                    "Link": link
+                }
+                if " - " in dados["Localização"]:
+                    dados["Cidade"] = dados["Localização"].split(" - ")[0]
+                return dados
+            except Exception as e:
+                if attempt < retries - 1:
+                    logging.warning(f"Tentativa {attempt + 1} falhou para {link}: {str(e)}. Tentando novamente após 1s...")
+                    await asyncio.sleep(1)
+                else:
+                    logging.error(f"Erro em {link} após {retries} tentativas: {str(e)}")
+                    return None
+            finally:
+                await pagina.close()
+
+async def processar_links(links, max_concurrent=25):
     dados_coletados = []
-    processed_links = set()
-
-    # Carrega o cache existente, se houver
+    semaphore = asyncio.Semaphore(max_concurrent)
     if os.path.exists(ARQUIVO_CHECKPOINT):
-        try:
-            with open(ARQUIVO_CHECKPOINT, 'rb') as f:
-                dados_coletados = pd.read_pickle(f).to_dict('records')
-            processed_links = {d["Link"] for d in dados_coletados if "Link" in d}
-            logging.info(f"Checkpoint carregado: {len(dados_coletados)} links já processados.")
-        except Exception as e:
-            logging.error(f"Erro ao carregar checkpoint: {e}. Iniciando do zero.")
-            dados_coletados = []
-            processed_links = set()
-
-    # Filtra links já processados
-    links_a_processar = [link for link in links if link not in processed_links]
-    logging.info(f"{len(links_a_processar)} links a processar após verificação do cache.")
-
-    if not links_a_processar:
-        logging.info("Todos os links já foram processados anteriormente.")
-        return dados_coletados
+        with open(ARQUIVO_CHECKPOINT, 'rb') as f:
+            dados_coletados = pd.read_pickle(f).to_dict('records')
+            processed_links = {d["Link"] for d in dados_coletados}
+            links = [link for link in links if link not in processed_links]
+            logging.info(f"Checkpoint carregado: {len(dados_coletados)} links já processados, {len(links)} restantes.")
 
     async with async_playwright() as p:
         navegador = await p.chromium.launch(headless=True)
-        contexto = await navegador.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            viewport={"width": 1280, "height": 720}
-        )
-        try:
-            for i in range(0, len(links_a_processar), max_concurrent):
-                batch = links_a_processar[i:i + max_concurrent]
-                tarefas = []
-                for link in batch:
-                    pagina = await contexto.new_page()
-                    tarefas.append(extracaoDados(pagina, link))
-                
-                novos_dados = []
+        for i in range(0, len(links), max_concurrent):
+            batch = links[i:i + max_concurrent]
+            contexto = await navegador.new_context()
+            try:
+                tarefas = [extracaoDados(contexto, link, semaphore) for link in batch]
                 for tarefa in tqdm(asyncio.as_completed(tarefas), total=len(batch), desc="Processando lote"):
                     resultado = await tarefa
                     if resultado:
-                        novos_dados.append(resultado)
-                
-                # Adiciona novos dados ao cache e salva após cada lote
-                if novos_dados:
-                    dados_coletados.extend(novos_dados)
-                    processed_links.update({d["Link"] for d in novos_dados})
-                    try:
-                        pd.DataFrame(dados_coletados).to_pickle(ARQUIVO_CHECKPOINT)
-                        logging.info(f"Checkpoint atualizado com {len(dados_coletados)} links processados.")
-                    except Exception as e:
-                        logging.error(f"Erro ao salvar checkpoint: {e}")
-        finally:
-            await contexto.close()
-            await navegador.close()
+                        dados_coletados.append(resultado)
+                        if len(dados_coletados) % 500 == 0:  # Checkpoint a cada 50 links
+                            pd.DataFrame(dados_coletados).to_pickle(ARQUIVO_CHECKPOINT)
+                            logging.info(f"Checkpoint salvo com {len(dados_coletados)} links.")
+                await asyncio.sleep(0.2)  # Reduzido para 0,2s
+            except Exception as e:
+                logging.error(f"Erro no processamento do lote {i//max_concurrent + 1}: {str(e)}")
+            finally:
+                await contexto.close()
+        await navegador.close()
 
     return dados_coletados
 
@@ -144,13 +154,10 @@ async def salvar_dados(dados_coletados):
         logging.warning("Nenhum dado para salvar.")
         return
     df = pd.DataFrame(dados_coletados)
-    try:
-        await asyncio.to_thread(df.to_pickle, ARQUIVO_PKL_DADOS)
-        logging.info(f"Dados salvos em '{ARQUIVO_PKL_DADOS}' ({len(df)} registros).")
-        await asyncio.to_thread(df.to_excel, ARQUIVO_EXCEL_DADOS, index=False)
-        logging.info(f"Dados salvos em '{ARQUIVO_EXCEL_DADOS}' ({len(df)} registros).")
-    except Exception as e:
-        logging.error(f"Erro ao salvar dados finais: {e}")
+    await asyncio.to_thread(df.to_pickle, ARQUIVO_PKL_DADOS)
+    logging.info(f"Dados salvos em '{ARQUIVO_PKL_DADOS}' ({len(df)} registros).")
+    await asyncio.to_thread(df.to_excel, ARQUIVO_EXCEL_DADOS, index=False)
+    logging.info(f"Dados salvos em '{ARQUIVO_EXCEL_DADOS}' ({len(df)} registros).")
 
 async def main():
     links = await carregar_links()

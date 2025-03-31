@@ -56,11 +56,11 @@ async def extracaoDados(contexto, link, semaphore, retries=3):
         logging.info(f"Acessando {link}")
         for attempt in range(retries):
             try:
-                response = await pagina.goto(link, timeout=15000)
+                response = await pagina.goto(link, timeout=25000)
                 if response and response.status != 200:
                     logging.warning(f"Status {response.status} em {link}. Possível bloqueio.")
                     return None
-                await pagina.wait_for_load_state('domcontentloaded', timeout=15000)
+                await pagina.wait_for_load_state('domcontentloaded', timeout=25000)
 
                 # Seletores para "Cor" com o novo seletor completo adicionado
                 cor_seletores = [
@@ -115,7 +115,7 @@ async def extracaoDados(contexto, link, semaphore, retries=3):
             finally:
                 await pagina.close()
 
-async def processar_links(links, max_concurrent=15):
+async def processar_links(links, max_concurrent=25):
     dados_coletados = []
     semaphore = asyncio.Semaphore(max_concurrent)
     if os.path.exists(ARQUIVO_CHECKPOINT):
@@ -136,7 +136,7 @@ async def processar_links(links, max_concurrent=15):
                     resultado = await tarefa
                     if resultado:
                         dados_coletados.append(resultado)
-                        if len(dados_coletados) % 100 == 0:
+                        if len(dados_coletados) % 500 == 0:
                             pd.DataFrame(dados_coletados).to_pickle(ARQUIVO_CHECKPOINT)
                             logging.info(f"Checkpoint salvo com {len(dados_coletados)} links.")
                 await asyncio.sleep(1)
