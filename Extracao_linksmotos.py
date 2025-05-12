@@ -2,12 +2,15 @@ from playwright.async_api import async_playwright
 import asyncio
 import os
 import pickle
-import pandas as pd  
+import pandas as pd
+from urllib.parse import urljoin
+import traceback
 
 ARQUIVO_PICKLE = "links_chaves_na_mao_motos.pkl"
 ARQUIVO_EXCEL = "links_chaves_na_mao_motos.xlsx"
 DOMINIO_BASE = "https://www.chavesnamao.com.br/"
 
+# Lista de URLs para scraping
 links = [
     ("Motos", "https://www.chavesnamao.com.br/motos-usadas/brasil/?filtro=amin:2002,amax:", 1700),
     ("Motos", "https://www.chavesnamao.com.br/motos-usadas/brasil/?&filtro=amin:2002,amax:0,or:4", 1700),
@@ -54,7 +57,7 @@ async def rolar_e_coletar(pagina, limite_itens):
 
     while tentativas_sem_novos_itens < 5 and len(ids_itens_carregados) < limite_itens:
         try:
-            await pagina.wait_for_selector('//a[@href]', timeout=10000)
+            await pagina.wait_for_selector('//a[@href]', timeout=30000)
             links = await pagina.query_selector_all('//a[@href]')
             novos_itens = 0
 
@@ -63,8 +66,7 @@ async def rolar_e_coletar(pagina, limite_itens):
                     break
                 href = await link.get_attribute('href')
                 if href:
-                    href = href if href.startswith("http") else f"{DOMINIO_BASE}{href}"
-                    href = href.replace("//", "/").replace("https:/", "https://")
+                    href = urljoin(DOMINIO_BASE, href)
                     if "/moto/" in href and "/id-" in href and href not in ids_itens_carregados:
                         ids_itens_carregados.add(href)
                         novos_itens += 1
@@ -82,7 +84,8 @@ async def rolar_e_coletar(pagina, limite_itens):
             await asyncio.sleep(3)
 
         except Exception as e:
-            print(f"Erro ao encontrar links: {e}. Tentando novamente...")
+            print(f"Erro ao encontrar links: {e}")
+            traceback.print_exc()
             tentativas_sem_novos_itens += 1
             await asyncio.sleep(3)
 
@@ -95,7 +98,7 @@ async def processar_url(navegador, marca, url, limite, links_existentes):
         return []
 
     print(f"Abrindo página para {marca} ({url})...")
-    pagina = await navegador.new_page()
+    pagina = await navegador.new_page(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
     try:
         await pagina.route("**/*.{png,jpg,jpeg,gif,webp}", lambda route: route.abort())
         await pagina.goto(url, timeout=60000)
@@ -104,6 +107,7 @@ async def processar_url(navegador, marca, url, limite, links_existentes):
         return dados
     except Exception as e:
         print(f"Erro ao processar {marca}: {e}")
+        traceback.print_exc()
         return []
     finally:
         await pagina.close()
@@ -111,7 +115,7 @@ async def processar_url(navegador, marca, url, limite, links_existentes):
 async def main():
     links_existentes = carregar_progresso()
     async with async_playwright() as p:
-        navegador = await p.chromium.launch()
+        navegador = await p.chromium.launch(headless=True)
         for i in range(0, len(links), 5):
             lote = links[i:i+5]
             tarefas = [processar_url(navegador, m, u, l, links_existentes) for m, u, l in lote]
@@ -135,4 +139,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    

@@ -5,6 +5,20 @@ import pickle
 import pandas as pd  
 
 links = [
+    ("Carros", "https://www.chavesnamao.com.br/carros-usados/brasil/?filtro=amin:2002", 3000),
+    ("Carros", "https://www.chavesnamao.com.br/carros-usados/brasil/?filtro=amin:2002,or:1", 3000),
+    ("Carros", "https://www.chavesnamao.com.br/carros-usados/brasil/?filtro=amin:2002,com:[2],or:1", 3000),
+    ("Carros", "https://www.chavesnamao.com.br/carros-usados/brasil/?filtro=amin:2002,com:[3],or:1", 3000),
+    ("Carros", "https://www.chavesnamao.com.br/carros-usados/brasil/?filtro=amin:2002,com:[8+9+10+1],or:1", 3000),
+    ("Carros", "https://www.chavesnamao.com.br/carros-usados/brasil/?filtro=amin:2002,com:[4],or:1", 3000),
+    ("Carros", "https://www.chavesnamao.com.br/carros-usados/brasil/?filtro=amin:2002,com:[4],or:0", 3000),
+    ("Carros", "https://www.chavesnamao.com.br/carros-usados/rj-rio-de-janeiro/?filtro=amin:2002,com:[4],or:0", 3000),
+    ("Carros", "https://www.chavesnamao.com.br/carros-usados/mg-belo-horizonte/?filtro=amin:2002,com:[4],or:0", 3000),
+    ("Carros", "https://www.chavesnamao.com.br/carros-usados/sp-campinas/?filtro=amin:2002,com:[4],or:0", 3000),
+    ("Carros", "https://www.chavesnamao.com.br/carros-usados/sp-sao-paulo/?filtro=amin:2002,com:[4],or:0", 3000),
+    ("Carros", "https://www.chavesnamao.com.br/carros-usados/pr-curitiba/?filtro=amin:2002,com:[4],or:0", 3000),
+    ("Carros", "https://www.chavesnamao.com.br/carros/pr-curitiba/volkswagen/?filtro=amin:2002,com:[4],or:0", 3000),
+    ("Carros", "https://www.chavesnamao.com.br/carros/pr-curitiba/chevrolet/?filtro=amin:2002,com:[4],or:0", 3000),
     ("Renault", "https://www.chavesnamao.com.br/carros/brasil/renault-sandero/2002/", 3000),
     ("FORD", "https://www.chavesnamao.com.br/carros/brasil/ford/2002/?filtro=or:2", 3000),
     ("São Paulo", "https://www.chavesnamao.com.br/carros-usados/sp-sao-paulo/", 3000),
