@@ -12,7 +12,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Arquivos
-ARQUIVO_EXCEL_LINKS = "teste_motos.xlsx"
+ARQUIVO_EXCEL_LINKS = "links_chaves_na_mao_motos.xlsx"
 ARQUIVO_PKL_DADOS = "dados_chaves_na_mao.pkl"
 ARQUIVO_EXCEL_DADOS = "dados_chaves_na_mao.xlsx"
 ARQUIVO_CHECKPOINT = "checkpoint.pkl"
@@ -42,14 +42,10 @@ async def extrair_elemento(pagina, seletor, default="N/A"):
     try:
         elemento = pagina.locator(seletor)
         count = await elemento.count()
-        logging.debug(f"Seletor {seletor} encontrou {count} elementos")
         if count > 0:
+            await elemento.first.wait_for(timeout=TIMEOUT)
             texto = (await elemento.first.inner_text()).strip()
-            logging.debug(f"Texto extraído: {texto}")
             return texto if texto else default
-        return default
-    except PlaywrightTimeoutError as e:
-        logging.debug(f"Timeout ao extrair com seletor {seletor}: {e}")
         return default
     except Exception as e:
         logging.debug(f"Erro ao extrair com seletor {seletor}: {e}")
@@ -59,11 +55,7 @@ async def extrair_com_multiplos_seletores(pagina, seletores, default="N/A", link
     for seletor in seletores:
         valor = await extrair_elemento(pagina, seletor)
         if valor != "N/A":
-            logging.debug(f"Valor extraído com sucesso de '{seletor}' para {link}: {valor}")
             return valor
-        else:
-            logging.debug(f"Valor não encontrado em '{seletor}' para {link}")
-    logging.debug(f"Nenhum seletor funcionou para {link}, retornando {default}")
     return default
 
 async def extracaoDados(contexto, link, semaphore):
@@ -79,7 +71,14 @@ async def extracaoDados(contexto, link, semaphore):
                         logging.warning(f"Status {response.status} em {link}. Possível bloqueio.")
                         return None
                     await pagina.wait_for_load_state('domcontentloaded', timeout=TIMEOUT)
-                    await pagina.wait_for_timeout(1000)  # Pequena espera adicional
+                    await pagina.wait_for_timeout(1000)
+
+                    # Scroll forçado para carregar a tabela FIPE
+                    for _ in range(10):
+                        if await pagina.locator("#version-price-fipe").count() > 0:
+                            break
+                        await pagina.mouse.wheel(0, 800)
+                        await pagina.wait_for_timeout(1000)
 
                     cor_seletores = [
                         '//li[contains(text(), "Cor")]/p/b',
@@ -88,24 +87,22 @@ async def extracaoDados(contexto, link, semaphore):
                         '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(7) p b'
                     ]
                     preco_fipe_seletores = [
-                        "body > main > article > section.row.spacing-4x.space-between.style-module__icNBzq__mainSection > div > div.column.spacing-3x > div.column.spacing-1x.style-module__bTC3Oa__priceBox > div.column.style-module__bTC3Oa__median > span > span > h3 > b"
-                        "/html/body/main/article/section[2]/div/div[4]/div/div[1]/span/span/h3/b",
-                        "/html/body/main/article/section[2]/div/div[4]/div/div[2]/span/span/h2/b",
-                        "#version-price-fipe > tr:nth-child(1) > td:nth-child(3) > p > b"
+                        "#version-price-fipe > tr:nth-child(1) > td:nth-child(3) > p > b",
+                        "//article/section[2]/div/div[4]/div/div[2]/span/span/h2/b"
                     ]
                     resultados = await asyncio.gather(
-                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x div span p b'),  # Modelo
-                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x div span p small'),  # Versão
-                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x div div span p b'),  # Preço
-                        extrair_com_multiplos_seletores(pagina, cor_seletores, link=link),  # Cor
-                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(1) p b'),  # Localização
-                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(2) p b'),  # Ano do Modelo
-                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(3) p b'),  # KM
-                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(4) p b'),  # Transmissão
-                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(5) p b'),  # Combustível
-                        extrair_elemento(pagina, '#version-price-fipe > tr:nth-child(1) > td:nth-child(2)'),  # Código Fipe
-                        extrair_com_multiplos_seletores(pagina, preco_fipe_seletores, link=link),  # Preço Fipe
-                        extrair_elemento(pagina, '#aside-init .style-module__Z2BY8a__container .style-module__Z2BY8a__nameContainer a span h2 b'),  # Anunciante
+                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x div span p b'),
+                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x div span p small'),
+                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x div div span p b'),
+                        extrair_com_multiplos_seletores(pagina, cor_seletores, link=link),
+                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(1) p b'),
+                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(2) p b'),
+                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(3) p b'),
+                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(4) p b'),
+                        extrair_elemento(pagina, '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(5) p b'),
+                        extrair_elemento(pagina, '#version-price-fipe > tr:nth-child(1) > td:nth-child(2) > p'),
+                        extrair_com_multiplos_seletores(pagina, preco_fipe_seletores, link=link),
+                        extrair_elemento(pagina, '#aside-init .style-module__Z2BY8a__container .style-module__Z2BY8a__nameContainer a span h2 b'),
                         return_exceptions=True
                     )
                     dados = {
@@ -125,7 +122,6 @@ async def extracaoDados(contexto, link, semaphore):
                         "Link": link
                     }
 
-                    # Validação de dados
                     if dados["Preço"] != "N/A":
                         try:
                             dados["Preço"] = float(dados["Preço"].replace("R$", "").replace(".", "").replace(",", "."))
@@ -177,7 +173,7 @@ async def processar_links(links, max_concurrent=MAX_CONCURRENT):
     async with async_playwright() as p:
         navegador = await p.chromium.launch(headless=True)
         for i in range(0, len(links), max_concurrent):
-            if i % (max_concurrent * 15) == 0 and i > 0:  # Reinicia a cada 10 lotes
+            if i % (max_concurrent * 15) == 0 and i > 0:  # Reinicia a cada 15 lotes
                 await navegador.close()
                 navegador = await p.chromium.launch(headless=True)
             batch = links[i:i + max_concurrent]
@@ -190,7 +186,7 @@ async def processar_links(links, max_concurrent=MAX_CONCURRENT):
                     resultado = await tarefa
                     if resultado:
                         dados_coletados.append(resultado)
-                        if len(dados_coletados) % 500 == 0:  # Checkpoint a cada 50 links
+                        if len(dados_coletados) % 500 == 0:  # Checkpoint a cada 500 links
                             pd.DataFrame(dados_coletados).to_pickle(ARQUIVO_CHECKPOINT)
                             logging.info(f"Checkpoint salvo com {len(dados_coletados)} links.")
                 await asyncio.sleep(1)  # Pausa maior entre lotes
