@@ -12,7 +12,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Arquivos
-ARQUIVO_EXCEL_LINKS = "links_chaves_na_mao_motos.xlsx"
+ARQUIVO_EXCEL_LINKS = "links_chaves_na_mao_carros.xlsx"
 ARQUIVO_PKL_DADOS = "dados_chaves_na_mao.pkl"
 ARQUIVO_EXCEL_DADOS = "dados_chaves_na_mao.xlsx"
 ARQUIVO_CHECKPOINT = "checkpoint.pkl"

@@ -3,6 +3,7 @@ import os
 import asyncio
 import sys
 import logging
+import re
 from tqdm import tqdm
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from time import time
@@ -18,49 +19,110 @@ ARQUIVO_EXCEL_DADOS = "dados_chaves_na_mao.xlsx"
 ARQUIVO_CHECKPOINT = "checkpoint.pkl"
 
 # Constantes
-TIMEOUT = 30_000  # 30 segundos
+TIMEOUT = 30_000
 RETRIES = 3
-MAX_CONCURRENT = 10  # Ajustado para estabilidade
+MAX_CONCURRENT = 10
+
+SELETORES_FIPE = {
+    "codigo_fipe": [
+        "#version-price-fipe > tr:nth-child(1) > td:nth-child(4) > p",
+        "#version-price-fipe > tr.versionTemplate-module__qVM2Bq__highlighted > td:nth-child(4) > p",
+        "//table[@id='version-price-fipe']//td[position()=4]/p",
+    ],
+    "preco_fipe": [
+        "#version-price-fipe > tr:nth-child(1) > td:nth-child(5) > p > b",
+        "#version-price-fipe > tr.versionTemplate-module__qVM2Bq__highlighted > td:nth-child(5) > p > b",
+        "//article/section[2]/div/div[3]/div/div[2]/span/span/h2/b",
+        "//article/section[2]/div/div[3]/div/div[1]/span/span/h3/b",
+    ]
+}
 
 async def carregar_links():
-    """Carrega links únicos do arquivo Excel."""
     if not os.path.exists(ARQUIVO_EXCEL_LINKS):
         logging.error(f"Arquivo {ARQUIVO_EXCEL_LINKS} não encontrado.")
         return []
     try:
         df = await asyncio.to_thread(pd.read_excel, ARQUIVO_EXCEL_LINKS)
         if "Link" not in df.columns:
-            logging.error(f"Coluna 'Link' não encontrada em {ARQUIVO_EXCEL_LINKS}.")
+            logging.error(f"Coluna 'Link' não encontrada.")
             return []
         links = df['Link'].dropna().unique().tolist()
         logging.info(f"Carregados {len(links)} links únicos.")
         return links
     except Exception as e:
-        logging.error(f"Erro ao carregar {ARQUIVO_EXCEL_LINKS}: {e}")
+        logging.error(f"Erro ao carregar links: {e}")
         return []
 
 async def extrair_elemento(pagina, seletor, default="N/A"):
-    """Extrai texto de um elemento com seletor, retorna default se falhar."""
     try:
-        elemento = pagina.locator(seletor)
+        elemento = pagina.locator(seletor).first
         if await elemento.count() > 0:
-            texto = (await elemento.first.inner_text(timeout=TIMEOUT)).strip()
+            await elemento.wait_for(timeout=TIMEOUT)
+            texto = (await elemento.inner_text()).strip()
             return texto or default
         return default
     except Exception as e:
-        logging.debug(f"Erro ao extrair '{seletor}': {e}")
+        logging.debug(f"Erro ao extrair {seletor}: {e}")
         return default
 
-async def extrair_com_multiplos_seletores(pagina, seletores, default="N/A"):
-    """Tenta extrair com múltiplos seletores, retorna o primeiro sucesso."""
+async def extrair_por_seletores(pagina, seletores, default="N/A"):
     for seletor in seletores:
-        valor = await extrair_elemento(pagina, seletor, default)
-        if valor != default:
-            return valor
+        try:
+            is_xpath = seletor.strip().startswith("//") or seletor.strip().startswith("/html")
+            locator = pagina.locator(f"xpath={seletor}" if is_xpath else seletor).first
+
+            if await locator.count() == 0:
+                continue
+
+            try:
+                await locator.scroll_into_view_if_needed()
+                # Removemos o estado visível para lidar com <td> invisível
+                try:
+                    texto = (await locator.inner_text(timeout=TIMEOUT)).strip()
+                except:
+                    texto = (await locator.text_content()).strip()
+
+                if texto:
+                    logging.debug(f"[✓] Seletor válido: {seletor} → {texto}")
+                    return texto
+            except Exception as e:
+                logging.debug(f"Erro ao extrair com '{seletor}': {e}")
+                continue
+
+        except Exception as e:
+            logging.debug(f"Erro ao localizar seletor '{seletor}': {e}")
+            continue
+
+    return default
+
+async def extrair_cor_com_validacao(pagina, seletores, default="N/A"):
+    for seletor in seletores:
+        try:
+            is_xpath = seletor.strip().startswith("//") or seletor.strip().startswith("/html")
+            locator = pagina.locator(f"xpath={seletor}" if is_xpath else seletor).first
+            if await locator.count() == 0:
+                continue
+            try:
+                await locator.scroll_into_view_if_needed()
+                await locator.wait_for(state="visible", timeout=TIMEOUT)
+                try:
+                    texto = (await locator.inner_text()).strip()
+                except:
+                    texto = (await locator.text_content()).strip()
+                if texto and not texto.isdigit():
+                    logging.debug(f"Cor válida extraída: {texto}")
+                    return texto
+                else:
+                    logging.debug(f"Ignorando valor inválido como cor: {texto}")
+            except Exception as e:
+                logging.debug(f"Erro ao tentar extrair cor com seletor '{seletor}': {e}")
+                continue
+        except Exception as e:
+            logging.debug(f"Erro ao localizar seletor '{seletor}': {e}")
+            continue
     return default
 
 async def extracao_dados(contexto, link, semaphore):
-    """Extrai dados de uma página com retries e scroll para carregar conteúdo."""
     async with semaphore:
         pagina = None
         try:
@@ -73,7 +135,6 @@ async def extracao_dados(contexto, link, semaphore):
                         logging.warning(f"Status {response.status} em {link}.")
                         return None
 
-                    # Scroll para carregar tabela FIPE
                     for _ in range(5):
                         if await pagina.locator("#version-price-fipe").count() > 0:
                             break
@@ -84,75 +145,67 @@ async def extracao_dados(contexto, link, semaphore):
                         "Modelo": '.style-module__icNBzq__mainSection .column.spacing-2x div span p b',
                         "Versão": '.style-module__icNBzq__mainSection .column.spacing-2x div span p small',
                         "Preço": '.style-module__icNBzq__mainSection .column.spacing-2x div div span p b',
-                        "Cor": [
-                            '//li[contains(text(), "Cor")]/p/b',
-                            '//article/article/section[2]/div/div[1]/ul/li[7]/p/b',
-                            '//article/article/section[2]/div/div[1]/ul/li[6]/p/b',
-                            '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(7) p b'
-                        ],
                         "Localização": '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(1) p b',
                         "Ano do Modelo": '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(2) p b',
                         "KM": '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(3) p b',
                         "Transmissão": '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(4) p b',
                         "Combustível": '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(5) p b',
-                        "Código Fipe": ['#version-price-fipe > tr:nth-child(1) > td:nth-child(4) > p',
-                                        "#version-price-fipe > tr.versionTemplate-module__qVM2Bq__highlighted > td:nth-child(4) > p"
-                        ],
-                        "Fipe": [
-                            "#version-price-fipe > tr:nth-child(1) > td:nth-child(5) > p > b",
-                            "//*[@id='mdl-7175874']/article/section[2]/div/div[4]/div/div[2]/span/span/h2/b",
-                            "#version-price-fipe > tr.versionTemplate-module__qVM2Bq__highlighted > td:nth-child(5) > p > b"
-                        ],
-                        "Anunciante": '#aside-init > div.column.spacing-1x.space-between.w100.style-module__Z2BY8a__container > span > span.wrap.space-between.style-module__Z2BY8a__nameContainer > a > span > h2 > b'
+                        "Anunciante": '#aside-init .style-module__Z2BY8a__nameContainer a span h2 b'
                     }
 
                     resultados = await asyncio.gather(
-                        *[extrair_com_multiplos_seletores(pagina, v) if isinstance(v, list) else extrair_elemento(pagina, v)
+                        *[extrair_por_seletores(pagina, v) if isinstance(v, list) else extrair_elemento(pagina, v)
                           for v in seletores.values()],
                         return_exceptions=True
                     )
 
                     dados = dict(zip(seletores.keys(), [r if not isinstance(r, Exception) else "N/A" for r in resultados]))
-                    dados.update({"Link": link, "Cidade": "Desconhecido"})
+                    dados["Link"] = link
+                    dados["Cidade"] = "Desconhecido"
 
-                    # Processar preço
+                    # Extração específica de Cor com verificação
+                    dados["Cor"] = await extrair_cor_com_validacao(
+                        pagina,
+                        [
+                            '//li[contains(text(), "Cor")]/p/b',
+                            '//article/article/section[2]/div/div[1]/ul/li[7]/p/b',
+                            '//article/article/section[2]/div/div[1]/ul/li[6]/p/b',
+                            '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(7) p b'
+                        ]
+                    )
+
+                    # FIPE
+                    dados["Código Fipe"] = await extrair_por_seletores(pagina, SELETORES_FIPE["codigo_fipe"])
+                    dados["Fipe"] = await extrair_por_seletores(pagina, SELETORES_FIPE["preco_fipe"])
+
                     if dados["Preço"] != "N/A":
                         try:
                             dados["Preço"] = float(dados["Preço"].replace("R$", "").replace(".", "").replace(",", "."))
-                        except ValueError:
-                            logging.warning(f"Preço inválido: {dados['Preço']}")
+                        except:
                             dados["Preço"] = "N/A"
 
-                    # Processar localização e cidade
                     if dados["Localização"] != "N/A" and " - " in dados["Localização"]:
                         dados["Cidade"] = dados["Localização"].split(" - ")[0]
 
-                    # Processar ano
                     if dados["Ano do Modelo"] != "N/A":
                         try:
                             dados["Ano do Modelo"] = int(dados["Ano do Modelo"].split("/")[-1])
-                        except ValueError:
-                            logging.warning(f"Ano inválido: {dados['Ano do Modelo']}")
+                        except:
                             dados["Ano do Modelo"] = "N/A"
 
                     return dados
                 except PlaywrightTimeoutError:
                     logging.warning(f"Tentativa {attempt + 1} falhou para {link}: Timeout")
-                    if attempt < RETRIES - 1:
-                        await asyncio.sleep(2 ** attempt)
-                    continue
+                    await asyncio.sleep(2)
                 except Exception as e:
                     logging.error(f"Tentativa {attempt + 1} falhou para {link}: {e}")
-                    if attempt < RETRIES - 1:
-                        await asyncio.sleep(2 ** attempt)
-                    continue
+                    await asyncio.sleep(2)
             return None
         finally:
             if pagina:
                 await pagina.close()
 
 async def processar_links(links, max_concurrent=MAX_CONCURRENT):
-    """Processa links em lotes com checkpointing."""
     start_time = time()
     dados_coletados = []
     processed_links = set()
@@ -162,7 +215,7 @@ async def processar_links(links, max_concurrent=MAX_CONCURRENT):
             dados_coletados = pd.read_pickle(ARQUIVO_CHECKPOINT).to_dict('records')
             processed_links = {d["Link"] for d in dados_coletados}
             links = [link for link in links if link not in processed_links]
-            logging.info(f"Checkpoint carregado: {len(dados_coletados)} links processados, {len(links)} restantes.")
+            logging.info(f"Checkpoint carregado: {len(dados_coletados)} processados, {len(links)} restantes.")
         except Exception as e:
             logging.error(f"Erro ao carregar checkpoint: {e}")
 
@@ -176,9 +229,7 @@ async def processar_links(links, max_concurrent=MAX_CONCURRENT):
                 logging.info("Navegador reiniciado para evitar vazamentos de memória.")
 
             batch = links[i:i + max_concurrent]
-            async with (await navegador.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )) as contexto:
+            async with (await navegador.new_context(user_agent="Mozilla/5.0 Chrome/120.0")) as contexto:
                 tarefas = [extracao_dados(contexto, link, semaphore) for link in batch]
                 for tarefa in tqdm(asyncio.as_completed(tarefas), total=len(tarefas), desc=f"Lote {i//max_concurrent + 1}"):
                     try:
@@ -189,43 +240,41 @@ async def processar_links(links, max_concurrent=MAX_CONCURRENT):
                                 pd.DataFrame(dados_coletados).to_pickle(ARQUIVO_CHECKPOINT)
                                 logging.info(f"Checkpoint salvo: {len(dados_coletados)} links.")
                     except Exception as e:
-                        logging.error(f"Erro na tarefa do lote {i//max_concurrent + 1}: {e}")
-                await asyncio.sleep(2)
+                        logging.error(f"Erro em tarefa do lote {i//max_concurrent + 1}: {e}")
+                await asyncio.sleep(1)
 
         await navegador.close()
 
-    elapsed_time = time() - start_time
-    success_rate = len(dados_coletados) / (len(links) + len(dados_coletados)) * 100 if links or dados_coletados else 0
-    logging.info(f"Processamento concluído em {elapsed_time:.2f}s. Taxa de sucesso: {success_rate:.2f}%")
+    elapsed = time() - start_time
+    logging.info(f"Finalizado em {elapsed:.2f}s. Total: {len(dados_coletados)} registros.")
     return dados_coletados
 
-async def salvar_dados(dados_coletados):
-    """Salva dados em PKL e Excel de forma incremental."""
-    if not dados_coletados:
+async def salvar_dados(dados):
+    if not dados:
         logging.warning("Nenhum dado para salvar.")
         return
-    df = pd.DataFrame(dados_coletados)
+    df = pd.DataFrame(dados)
     await asyncio.to_thread(df.to_pickle, ARQUIVO_PKL_DADOS)
-    logging.info(f"Dados salvos em '{ARQUIVO_PKL_DADOS}' ({len(df)} registros).")
+    logging.info(f"Dados salvos em {ARQUIVO_PKL_DADOS}")
 
     try:
-        df_existente = pd.DataFrame()
         if os.path.exists(ARQUIVO_EXCEL_DADOS):
             df_existente = await asyncio.to_thread(pd.read_excel, ARQUIVO_EXCEL_DADOS, engine='openpyxl')
-        df_final = pd.concat([df_existente, df], ignore_index=True)
+            df_final = pd.concat([df_existente, df], ignore_index=True)
+        else:
+            df_final = df
         await asyncio.to_thread(df_final.to_excel, ARQUIVO_EXCEL_DADOS, index=False, engine='openpyxl')
-        logging.info(f"Dados salvos em '{ARQUIVO_EXCEL_DADOS}' ({len(df_final)} registros).")
+        logging.info(f"Excel salvo em {ARQUIVO_EXCEL_DADOS}")
     except Exception as e:
-        logging.error(f"Erro ao salvar Excel '{ARQUIVO_EXCEL_DADOS}': {e}")
+        logging.error(f"Erro ao salvar Excel: {e}")
 
 async def main():
-    """Função principal."""
     links = await carregar_links()
     if not links:
         logging.error("Nenhum link para processar.")
         return
-    dados_coletados = await processar_links(links)
-    await salvar_dados(dados_coletados)
+    dados = await processar_links(links)
+    await salvar_dados(dados)
 
 if __name__ == "__main__":
     asyncio.run(main())
