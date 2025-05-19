@@ -1,4 +1,3 @@
-# (cabeçalho igual, sem mudanças)
 import pandas as pd
 import os
 import asyncio
