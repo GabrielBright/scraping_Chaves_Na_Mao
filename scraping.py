@@ -81,15 +81,15 @@ async def extracao_dados(contexto, link, semaphore):
                         await asyncio.sleep(0.4)
 
                     seletores = {
-                        "Modelo": '.style-module__icNBzq__mainSection .column.spacing-2x div span p b',
-                        "Versão": '.style-module__icNBzq__mainSection .column.spacing-2x div span p small',
-                        "Preço": '.style-module__icNBzq__mainSection .column.spacing-2x div div span p b',
-                        "Localização": '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(1) p b',
-                        "Ano do Modelo": '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(2) p b',
-                        "KM": '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(3) p b',
-                        "Transmissão": '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(4) p b',
-                        "Combustível": '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(5) p b',
-                        "Anunciante": '#aside-init .style-module__Z2BY8a__nameContainer a span h2 b'
+                        "Modelo": 'main article section.row div.column span p > b',
+                        "Versão": 'main article section.row div.column span p > small',
+                        "Preço": 'main article section.row div.column div span > p',
+                        "Localização": 'main article section.row div.column ul > li:nth-child(1) > p > b',
+                        "Ano do Modelo": 'main article section.row div.column ul > li:nth-child(2) > p > b',
+                        "KM": 'main article section.row div.column ul > li:nth-child(3) > p > b',
+                        "Transmissão": 'main article section.row div.column ul > li:nth-child(4) > p > b',
+                        "Combustível": 'main article section.row div.column ul > li:nth-child(5) > p > b',
+                        "Anunciante": 'aside span span.wrap a span h2 > b'
                     }
 
                     dados = {}
@@ -103,6 +103,8 @@ async def extracao_dados(contexto, link, semaphore):
                         '//li[contains(text(), "Cor")]/p/b',
                         '//article/article/section[2]/div/div[1]/ul/li[7]/p/b',
                         '//article/article/section[2]/div/div[1]/ul/li[6]/p/b',
+                        'body > main > article > section.row.spacing-4x.space-between.style-module__vnSL7G__mainSection > div > div.column.spacing-2x > ul > li:nth-child(7) > p > b',
+                        'body > main > article > section.row.spacing-4x.space-between.style-module__vnSL7G__mainSection > div > div.column.spacing-2x > ul > li:nth-child(6) > p > b'
                         '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(7) p b'
                     ])
 
