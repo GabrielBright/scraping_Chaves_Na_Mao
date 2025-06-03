@@ -83,7 +83,7 @@ async def extracao_dados(contexto, link, semaphore):
                     seletores = {
                         "Modelo": 'main article section.row div.column span p > b',
                         "Versão": 'main article section.row div.column span p > small',
-                        "Preço": '/html/body/main/article/section[2]/div/div[1]/div/div/span/p/b',
+                        "Preço": 'body > main > article > section.row.spacing-4x.space-between.style-module__vnSL7G__mainSection > div > div.column.spacing-2x > div > div > span > p > b',
                         "Localização": 'main article section.row div.column ul > li:nth-child(1) > p > b',
                         "Ano do Modelo": 'main article section.row div.column ul > li:nth-child(2) > p > b',
                         "KM": 'main article section.row div.column ul > li:nth-child(3) > p > b',
