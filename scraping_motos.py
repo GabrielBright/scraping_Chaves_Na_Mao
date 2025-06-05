@@ -35,6 +35,8 @@ SELETORES_FIPE = {
         "//table[@id='version-price-fipe']//td[position()=2]/p",
     ],
     "preco_fipe": [
+        "//article/section[2]/div/div[3]/div[1]/div[1]/span/span/h3/b",
+        "//article/section[2]/div/div[3]/div[1]/div[2]/span/span/h2/b",
         "//*[@id='version-price-fipe']/tr[1]/td[3]/p/b",
         "//article/section[2]/div/div[4]/div/div[2]/span/span/h2/b",
         "//article/section[2]/div/div[4]/div/div[1]/span/span/h3/b",
@@ -113,7 +115,7 @@ async def extracao_dados(contexto, link, semaphore):
                         '//article/article/section[2]/div/div[1]/ul/li[7]/p/b',
                         '//article/article/section[2]/div/div[1]/ul/li[6]/p/b',
                         'body > main > article > section.row.spacing-4x.space-between.style-module__vnSL7G__mainSection > div > div.column.spacing-2x > ul > li:nth-child(7) > p > b',
-                        'body > main > article > section.row.spacing-4x.space-between.style-module__vnSL7G__mainSection > div > div.column.spacing-2x > ul > li:nth-child(6) > p > b'
+                        'body > main > article > section.row.spacing-4x.space-between.style-module__vnSL7G__mainSection > div > div.column.spacing-2x > ul > li:nth-child(6) > p > b',
                         '.style-module__icNBzq__mainSection .column.spacing-2x ul li:nth-child(7) p b'
                     ])
 
