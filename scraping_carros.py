@@ -12,8 +12,8 @@ sys.stdout.reconfigure(encoding='utf-8')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 ARQUIVO_EXCEL_LINKS = "links_chaves_na_mao_carros.xlsx"
-ARQUIVO_PKL_DADOS = "dados_chaves_na_mao.pkl"
-ARQUIVO_EXCEL_DADOS = "dados_chaves_na_mao.xlsx"
+ARQUIVO_PKL_DADOS = "dados_chaves_na_mao_carros.pkl"
+ARQUIVO_EXCEL_DADOS = "dados_chaves_na_mao_carros.xlsx"
 ARQUIVO_CHECKPOINT = "checkpoint.pkl"
 
 TIMEOUT = 30000
