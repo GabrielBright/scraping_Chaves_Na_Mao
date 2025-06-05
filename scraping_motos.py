@@ -62,18 +62,36 @@ async def carregar_links():
 
 async def extrair_texto(pagina, seletores, default="N/A"):
     for seletor in seletores:
+        logging.debug(f"Tentando seletor: {seletor}")
         try:
-            is_xpath = seletor.strip().startswith("/") or seletor.strip().startswith("xpath=")
+            is_xpath = seletor.strip().startswith("/") or seletor.strip().startswith("//")
             locator = pagina.locator(f"xpath={seletor}" if is_xpath else seletor)
-            elementos = await locator.all()
-            for el in elementos:
+            count = await locator.count()
+            if count == 0:
+                continue
+            for i in range(count):
+                el = locator.nth(i)
                 try:
-                    texto = await el.text_content(timeout=TIMEOUT)
+                    await el.scroll_into_view_if_needed(timeout=TIMEOUT)
+                    await asyncio.sleep(0.8)  # dar tempo para o JS preencher
+
+                    texto = None
+                    try:
+                        texto = await el.text_content(timeout=TIMEOUT)
+                    except:
+                        try:
+                            texto = await el.inner_text(timeout=TIMEOUT)
+                        except:
+                            try:
+                                texto = await el.evaluate("el => el.innerText")
+                            except:
+                                pass
+
                     if texto and texto.strip():
                         return texto.strip()
-                except:
+                except Exception:
                     continue
-        except:
+        except Exception:
             continue
     return default
 
@@ -124,12 +142,7 @@ async def extracao_dados(contexto, link, semaphore):
                     ])
 
                     dados["Código Fipe"] = await extrair_texto(pagina, SELETORES_FIPE["codigo_fipe"])
-                    if not dados["Código Fipe"].replace("-", "").strip().isdigit():
-                        dados["Código Fipe"] = "N/A"
-
                     dados["Fipe"] = await extrair_texto(pagina, SELETORES_FIPE["preco_fipe"])
-                    if "R$" not in dados["Fipe"]:
-                        dados["Fipe"] = "N/A"
 
                     try:
                         dados["Preço"] = float(dados["Preço"].replace("R$", "").replace(".", "").replace(",", "."))
