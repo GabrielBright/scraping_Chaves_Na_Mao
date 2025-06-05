@@ -63,13 +63,16 @@ async def carregar_links():
 async def extrair_texto(pagina, seletores, default="N/A"):
     for seletor in seletores:
         try:
-            is_xpath = seletor.strip().startswith("//")
-            locator = pagina.locator(f"xpath={seletor}" if is_xpath else seletor).first
+            is_xpath = seletor.strip().startswith("//") or seletor.strip().startswith("xpath=")
+            seletor_formatado = f"xpath={seletor}" if is_xpath else seletor
+            locator = pagina.locator(seletor_formatado)
             if await locator.count() > 0:
-                texto = await locator.text_content(timeout=TIMEOUT)
+                texto = await locator.nth(0).text_content(timeout=TIMEOUT)
                 if texto:
-                    return texto.strip()
-        except:
+                    texto_limpo = texto.strip()
+                    if texto_limpo:
+                        return texto_limpo
+        except Exception as e:
             continue
     return default
 
@@ -120,7 +123,12 @@ async def extracao_dados(contexto, link, semaphore):
                     ])
 
                     dados["Código Fipe"] = await extrair_texto(pagina, SELETORES_FIPE["codigo_fipe"])
+                    if not dados["Código Fipe"].replace("-", "").strip().isdigit():
+                        dados["Código Fipe"] = "N/A"
+
                     dados["Fipe"] = await extrair_texto(pagina, SELETORES_FIPE["preco_fipe"])
+                    if "R$" not in dados["Fipe"]:
+                        dados["Fipe"] = "N/A"
 
                     try:
                         dados["Preço"] = float(dados["Preço"].replace("R$", "").replace(".", "").replace(",", "."))
