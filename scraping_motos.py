@@ -28,18 +28,18 @@ MAX_CONCURRENT = 15
 
 SELETORES_FIPE = {
     "codigo_fipe": [
-        '//*[@id="version-price-fipe"]/tr[1]/td[2]/p',
-        '//*[@id="version-price-fipe"]/tr[1]/td[2]',
         "#version-price-fipe > tr:nth-child(1) > td:nth-child(2) > p",
         "#version-price-fipe > tr.versionTemplate-module__qVM2Bq__highlighted > td:nth-child(2) > p",
         "//table[@id='version-price-fipe']//td[position()=2]/p",
+        '//*[@id="version-price-fipe"]/tr[1]/td[2]/p',
+        '//*[@id="version-price-fipe"]/tr[1]/td[2]',
     ],
     "preco_fipe": [
-        "//article/section[2]/div/div[3]/div[1]/div[1]/span/span/h3/b",
-        "//article/section[2]/div/div[3]/div[1]/div[2]/span/span/h2/b",
         "//*[@id='version-price-fipe']/tr[1]/td[3]/p/b",
         "//article/section[2]/div/div[4]/div/div[2]/span/span/h2/b",
         "//article/section[2]/div/div[4]/div/div[1]/span/span/h3/b",
+        "//article/section[2]/div/div[3]/div[1]/div[1]/span/span/h3/b",
+        "//article/section[2]/div/div[3]/div[1]/div[2]/span/span/h2/b",
     ]
 }
 
@@ -63,16 +63,17 @@ async def carregar_links():
 async def extrair_texto(pagina, seletores, default="N/A"):
     for seletor in seletores:
         try:
-            is_xpath = seletor.strip().startswith("//") or seletor.strip().startswith("xpath=")
-            seletor_formatado = f"xpath={seletor}" if is_xpath else seletor
-            locator = pagina.locator(seletor_formatado)
-            if await locator.count() > 0:
-                texto = await locator.nth(0).text_content(timeout=TIMEOUT)
-                if texto:
-                    texto_limpo = texto.strip()
-                    if texto_limpo:
-                        return texto_limpo
-        except Exception as e:
+            is_xpath = seletor.strip().startswith("/") or seletor.strip().startswith("xpath=")
+            locator = pagina.locator(f"xpath={seletor}" if is_xpath else seletor)
+            elementos = await locator.all()
+            for el in elementos:
+                try:
+                    texto = await el.text_content(timeout=TIMEOUT)
+                    if texto and texto.strip():
+                        return texto.strip()
+                except:
+                    continue
+        except:
             continue
     return default
 
