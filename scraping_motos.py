@@ -11,11 +11,17 @@ from time import time
 sys.stdout.reconfigure(encoding='utf-8')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Entrada de dados
 ARQUIVO_EXCEL_LINKS = "links_chaves_na_mao_motos.xlsx"
+
+# Saída dos dados
 ARQUIVO_PKL_DADOS = "dados_chaves_na_mao_motos.pkl"
 ARQUIVO_EXCEL_DADOS = "dados_chaves_na_mao_motos.xlsx"
+
+# Dados salvos acada 500 dados coletados
 ARQUIVO_CHECKPOINT = "checkpoint.pkl"
 
+# Limites
 TIMEOUT = 30000
 RETRIES = 3
 MAX_CONCURRENT = 15
@@ -35,6 +41,7 @@ SELETORES_FIPE = {
     ]
 }
 
+# Carrega os links da base de entrada
 async def carregar_links():
     if not os.path.exists(ARQUIVO_EXCEL_LINKS):
         logging.error(f"Arquivo {ARQUIVO_EXCEL_LINKS} não encontrado.")
@@ -64,6 +71,7 @@ async def extrair_texto(pagina, seletores, default="N/A"):
             continue
     return default
 
+# Extração dos dados tecnicos 
 async def extracao_dados(contexto, link, semaphore):
     async with semaphore:
         pagina = await contexto.new_page()
@@ -159,7 +167,7 @@ async def processar_links(links, max_concurrent=MAX_CONCURRENT):
                     resultado = await tarefa
                     if resultado:
                         dados_coletados.append(resultado)
-                        if len(dados_coletados) % 100 == 0:
+                        if len(dados_coletados) % 500 == 0:
                             pd.DataFrame(dados_coletados).to_pickle(ARQUIVO_CHECKPOINT)
                             logging.info(f"{len(dados_coletados)} salvos no checkpoint.")
                 except Exception as e:
