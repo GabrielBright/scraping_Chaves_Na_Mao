@@ -2,7 +2,9 @@ from playwright.async_api import async_playwright
 import asyncio
 import os
 import pickle
-import pandas as pd  
+import pandas as pd
+import traceback  
+from urllib.parse import urljoin
 
 links = [
     ("Carros", "https://www.chavesnamao.com.br/carros-usados/brasil/?filtro=amin:2002", 3000),
@@ -173,7 +175,6 @@ def carregar_progresso():
             return pickle.load(f)
     return set()
 
-#Função para rolar a página e coletar os links 
 async def rolar_e_coletar(pagina, limite_itens):
     ids_itens_carregados = set()
     tentativas_sem_novos_itens = 0
@@ -181,7 +182,7 @@ async def rolar_e_coletar(pagina, limite_itens):
 
     while tentativas_sem_novos_itens < 5 and len(ids_itens_carregados) < limite_itens:
         try:
-            await pagina.wait_for_selector('//a[@href]', timeout=10000)
+            await pagina.wait_for_selector('//a[@href]', timeout=30000)
             links = await pagina.query_selector_all('//a[@href]')
             novos_itens = 0
 
@@ -190,8 +191,7 @@ async def rolar_e_coletar(pagina, limite_itens):
                     break
                 href = await link.get_attribute('href')
                 if href:
-                    href = href if href.startswith("http") else f"{DOMINIO_BASE}{href}"
-                    href = href.replace("//", "/").replace("https:/", "https://")
+                    href = urljoin(DOMINIO_BASE, href)
                     if "/carro/" in href and "/id-" in href and href not in ids_itens_carregados:
                         ids_itens_carregados.add(href)
                         novos_itens += 1
@@ -209,62 +209,58 @@ async def rolar_e_coletar(pagina, limite_itens):
             await asyncio.sleep(3)
 
         except Exception as e:
-            print(f"Erro ao encontrar links: {e}. Tentando novamente...")
+            print(f"Erro ao encontrar links: {e}")
+            traceback.print_exc()
             tentativas_sem_novos_itens += 1
             await asyncio.sleep(3)
 
     print(f"Fim da rolagem para esta página. Total de itens carregados: {len(ids_itens_carregados)}")
     return [{"Link": link} for link in ids_itens_carregados]
 
-#Verifica se não é algum anuncio e sim um link 
-async def processar_url(navegador, cidade, url, limite, links_existentes):
+async def processar_url(navegador, marca, url, limite, links_existentes):
     if url in links_existentes:
-        print(f"{cidade} já processado. Pulando...")
+        print(f"{marca} já processado. Pulando...")
         return []
 
-    print(f"Processando {cidade} ({url})...")
-    pagina = await navegador.new_page()
+    print(f"Abrindo página para {marca} ({url})...")
+    pagina = await navegador.new_page(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
     try:
         await pagina.route("**/*.{png,jpg,jpeg,gif,webp}", lambda route: route.abort())
         await pagina.goto(url, timeout=60000)
-        await pagina.wait_for_load_state("domcontentloaded")
+        await pagina.wait_for_load_state("networkidle")
         dados = await rolar_e_coletar(pagina, limite)
         return dados
     except Exception as e:
-        print(f"Erro ao processar {cidade}: {e}")
+        print(f"Erro ao processar {marca}: {e}")
+        traceback.print_exc()
         return []
     finally:
         await pagina.close()
 
-def salvar_em_excel(dados_totais):
-    if not dados_totais:
-        print("Nenhum dado para salvar em Excel.")
-        return
-    
-    #Convertendo pkl para xlsx ao terminar o código
-    df = pd.DataFrame(dados_totais)
-    df = df.drop_duplicates(subset=["Link"])
-    df.to_excel(ARQUIVO_EXCEL, index=False)
-    print(f"Dados salvos em '{ARQUIVO_EXCEL}' com {len(df)} registros.")
-
 async def main():
     links_existentes = carregar_progresso()
-    dados_totais = [] 
-    
     async with async_playwright() as p:
-        navegador = await p.chromium.launch()
-        for i in range(0, len(links), 10):
-            lote = links[i:i+10]
-            tarefas = [processar_url(navegador, c, u, l, links_existentes) for c, u, l in lote]
+        navegador = await p.chromium.launch(headless=True)
+        for i in range(0, len(links), 5):
+            lote = links[i:i+5]
+            tarefas = [processar_url(navegador, m, u, l, links_existentes) for m, u, l in lote]
             resultados = await asyncio.gather(*tarefas)
-            novos_dados = [item for sublista in resultados for item in sublista if sublista]
-            if novos_dados:
-                dados_totais.extend(novos_dados)
-                salvar_progresso(novos_dados)
+            dados_totais = [item for sublista in resultados for item in sublista if sublista]
+            if dados_totais:
+                salvar_progresso(dados_totais)
         await navegador.close()
 
-    salvar_em_excel(dados_totais)
+    print("Extração finalizada!")
+
+    print("\nConvertendo o arquivo pickle para Excel...")
+    dados_finais = carregar_progresso()
+
+    if dados_finais:
+        df = pd.DataFrame([{"Link": link} for link in dados_finais])
+        df.to_excel(ARQUIVO_EXCEL, index=False)
+        print(f"Arquivo Excel '{ARQUIVO_EXCEL}' gerado com sucesso!")
+    else:
+        print("Nenhum dado foi encontrado no arquivo pickle para conversão.")
 
 if __name__ == "__main__":
     asyncio.run(main())
-    print("Extração finalizada!")
