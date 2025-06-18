@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 ARQUIVO_EXCEL_LINKS = "links_chaves_na_mao_carros.xlsx"
 ARQUIVO_PKL_DADOS = "dados_chaves_na_mao_carros.pkl"
 ARQUIVO_EXCEL_DADOS = "dados_chaves_na_mao_carros.xlsx"
-ARQUIVO_CHECKPOINT = "checkpoint.pkl"
+ARQUIVO_CHECKPOINT = "checkpoint_carros.pkl"
 
 TIMEOUT = 30000
 RETRIES = 3

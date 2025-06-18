@@ -19,7 +19,7 @@ ARQUIVO_PKL_DADOS = "dados_chaves_na_mao_motos.pkl"
 ARQUIVO_EXCEL_DADOS = "dados_chaves_na_mao_motos.xlsx"
 
 # Dados salvos acada 500 dados coletados
-ARQUIVO_CHECKPOINT = "checkpoint.pkl"
+ARQUIVO_CHECKPOINT = "checkpoint_motos.pkl"
 
 # Limites
 TIMEOUT = 30000
